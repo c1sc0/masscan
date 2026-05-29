@@ -1,0 +1,11 @@
+# Keep .git — build needs `git describe --tags` for the version string
+bin/
+tmp/
+# scan results from `docker compose` (mounted volume, never needed in build)
+output/
+paused.conf
+*.swp
+.vscode
+vs10/.vs/
+Dockerfile
+.dockerignore

@@ -207,6 +207,10 @@ struct Masscan
     unsigned is_scripting:1;    /* whether scripting is needed */
     unsigned is_capture_servername:1; /* --capture servername */
 
+    /** Hostname sent as the TLS SNI (server_name) extension in the SSL
+     * ClientHello, set by --ssl-sni. NULL means no SNI (default). */
+    char *ssl_sni;
+
     /** Packet template options, such as whether we should add a TCP MSS
      * value, or remove it from the packet */
     struct TemplateOptions *templ_opts; /* e.g. --tcpmss */

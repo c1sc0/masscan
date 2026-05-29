@@ -17,6 +17,7 @@
 #include "util-safefunc.h"
 #include "util-logger.h"
 #include "proto-banner1.h"
+#include "proto-ssl.h"
 #include "templ-payloads.h"
 #include "crypto-base64.h"
 #include "vulncheck.h"
@@ -1204,6 +1205,31 @@ static int SET_hello(struct Masscan *masscan, const char *name, const char *valu
     return CONF_OK;
 }
 
+static int SET_ssl_sni(struct Masscan *masscan, const char *name, const char *value)
+{
+    UNUSEDPARM(name);
+    if (masscan->echo) {
+        if (masscan->ssl_sni || masscan->echo_all)
+            fprintf(masscan->echo, "ssl-sni = %s\n", masscan->ssl_sni ? masscan->ssl_sni : "");
+        return 0;
+    }
+
+    if (ssl_hello_template_set_sni(value) != 0) {
+        fprintf(stderr, "FAIL: %s: bad SNI hostname (empty or >255 chars)\n", value);
+        return CONF_ERR;
+    }
+
+    if (masscan->ssl_sni)
+        free(masscan->ssl_sni);
+    masscan->ssl_sni = MALLOC(strlen(value) + 1);
+    memcpy(masscan->ssl_sni, value, strlen(value) + 1);
+
+    /* SNI is only meaningful when we actually open connections and send the
+     * SSL hello, so make sure banner-grabbing is on. */
+    masscan->is_banners = true;
+    return CONF_OK;
+}
+
 static int SET_hello_file(struct Masscan *masscan, const char *name, const char *value)
 {
     unsigned index;
@@ -2385,6 +2411,7 @@ struct ConfigParameter config_parameters[] = {
     {"pcap-filename",   SET_pcap_filename,      0,      {"pcap",0}},
     {"pcap-payloads",   SET_pcap_payloads,      0,      {"pcap-payload",0}},
     {"hello",           SET_hello,              0,      {0}},
+    {"ssl-sni",         SET_ssl_sni,            0,      {"sni", "tls-sni", 0}},
     {"hello-file",      SET_hello_file,         0,      {"hello-filename",0}},
     {"hello-string",    SET_hello_string,       0,      {0}},
     {"hello-timeout",   SET_hello_timeout,      0,      {0}},

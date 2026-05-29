@@ -28,5 +28,12 @@ char *ssl_hello(const void *templ);
  */
 char *ssl_add_cipherspec(void *templ, unsigned cipher_spec, unsigned is_append);
 
+/**
+ * Rewrite the SSL ClientHello templates to carry the given hostname in a
+ * "server_name" (SNI) extension. Called once at configuration time, so it
+ * adds no per-packet cost. Returns 0 on success, -1 on a bad/oversized name.
+ */
+int ssl_hello_template_set_sni(const char *name);
+
 
 #endif

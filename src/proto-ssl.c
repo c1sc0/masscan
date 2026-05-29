@@ -1206,6 +1206,108 @@ ssl_add_cipherspec(void *templ, unsigned cipher_spec, unsigned is_append)
 }
 
 /*****************************************************************************
+ * Build a new copy of a ClientHello template with a "server_name" (SNI)
+ * extension appended, carrying the given hostname. Returns a freshly
+ * allocated buffer (caller keeps it for the lifetime of the scan) and writes
+ * its size to *new_size. Returns NULL if the template doesn't look like a
+ * TLS ClientHello.
+ *****************************************************************************/
+static unsigned char *
+ssl_hello_append_sni(const unsigned char *templ, size_t templ_size,
+                     const char *name, size_t namelen, size_t *new_size)
+{
+    size_t ext_len = 9 + namelen; /* total bytes this adds to the ClientHello */
+    unsigned char *px;
+    unsigned char *e;
+    size_t offset;
+    size_t ext_total;
+    size_t handshake_len;
+    size_t record_len;
+
+    /* sanity: must be a TLS handshake record carrying a ClientHello */
+    if (templ_size < 44 || templ[0] != 0x16 || templ[5] != 0x01)
+        return NULL;
+
+    /* allocate the bigger buffer and copy the base template */
+    px = MALLOC(templ_size + ext_len);
+    memcpy(px, templ, templ_size);
+
+    /* walk the ClientHello body to locate the extensions-length field:
+     * skip record(5)+handshake-hdr(4)+version(2)+random(32) = offset 43,
+     * then session-id, cipher-suites, and compression-methods. */
+    offset = 43;
+    offset += px[offset] + 1;                          /* session-id */
+    offset += (px[offset]<<8 | px[offset+1]) + 2;      /* cipher-suites */
+    offset += px[offset] + 1;                          /* compression-methods */
+    /* px[offset..offset+1] is now the 2-byte extensions-total-length field;
+     * the extensions are the last thing in the template, so we append the
+     * new server_name extension at the very end of the buffer. */
+
+    e = px + templ_size;
+    *e++ = 0x00; *e++ = 0x00;                           /* ext type = server_name */
+    *e++ = (unsigned char)((namelen + 5) >> 8);         /* ext length */
+    *e++ = (unsigned char)((namelen + 5) >> 0);
+    *e++ = (unsigned char)((namelen + 3) >> 8);         /* server-name-list length */
+    *e++ = (unsigned char)((namelen + 3) >> 0);
+    *e++ = 0x00;                                        /* name type = host_name */
+    *e++ = (unsigned char)(namelen >> 8);               /* host_name length */
+    *e++ = (unsigned char)(namelen >> 0);
+    memcpy(e, name, namelen);
+
+    /* fix the three length fields that now cover the new extension */
+    ext_total = (px[offset]<<8 | px[offset+1]) + ext_len;
+    px[offset    ] = (unsigned char)(ext_total >> 8);
+    px[offset + 1] = (unsigned char)(ext_total >> 0);
+
+    handshake_len = (px[6]<<16 | px[7]<<8 | px[8]) + ext_len;
+    px[6] = (unsigned char)(handshake_len >> 16);
+    px[7] = (unsigned char)(handshake_len >>  8);
+    px[8] = (unsigned char)(handshake_len >>  0);
+
+    record_len = (px[3]<<8 | px[4]) + ext_len;
+    px[3] = (unsigned char)(record_len >> 8);
+    px[4] = (unsigned char)(record_len >> 0);
+
+    *new_size = templ_size + ext_len;
+    return px;
+}
+
+/*****************************************************************************
+ * Rewrite the SSL ClientHello templates to send the given hostname as SNI.
+ * Called once at configuration time (--ssl-sni), so it adds no per-packet
+ * cost to scanning. Returns 0 on success, -1 on a bad/oversized name.
+ *****************************************************************************/
+int
+ssl_hello_template_set_sni(const char *name)
+{
+    size_t namelen = strlen(name);
+    size_t new_size;
+    unsigned char *px;
+
+    /* DNS names are <= 253 chars; reject anything implausible rather than
+     * risk corrupting the record-length fields. */
+    if (namelen == 0 || namelen > 255)
+        return -1;
+
+    px = ssl_hello_append_sni((const unsigned char *)banner_ssl.hello,
+                              banner_ssl.hello_length, name, namelen, &new_size);
+    if (px == NULL)
+        return -1;
+    banner_ssl.hello = px;
+    banner_ssl.hello_length = new_size;
+
+    /* the TLS 1.2/1.3 fallback template too, best-effort */
+    px = ssl_hello_append_sni((const unsigned char *)banner_ssl_12.hello,
+                              banner_ssl_12.hello_length, name, namelen, &new_size);
+    if (px != NULL) {
+        banner_ssl_12.hello = px;
+        banner_ssl_12.hello_length = new_size;
+    }
+
+    return 0;
+}
+
+/*****************************************************************************
  * Figure out the Hello message size by parsing the data
  *****************************************************************************/
 unsigned

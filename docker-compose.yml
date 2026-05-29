@@ -1,0 +1,17 @@
+services:
+  masscan:
+    build: .
+    image: masscan:local
+    # Raw sockets need NET_RAW + NET_ADMIN. host networking lets masscan
+    # see the real interface/routes (its custom TCP stack bypasses the
+    # kernel; bridge NAT would break replies).
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    # Scan args. Override at runtime:
+    #   docker compose run --rm masscan -p80,443 10.0.0.0/24
+    # Results land in ./output (mounted below).
+    command: ["--help"]
+    volumes:
+      - ./output:/output
