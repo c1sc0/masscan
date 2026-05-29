@@ -211,6 +211,10 @@ struct Masscan
      * ClientHello, set by --ssl-sni. NULL means no SNI (default). */
     char *ssl_sni;
 
+    /** Optional file (--sni-match-file) that collects hosts whose SSL banner
+     * matches --ssl-sni, one "ip:port cert-summary" line per match. */
+    char *sni_match_filename;
+
     /** Packet template options, such as whether we should add a TCP MSS
      * value, or remove it from the packet */
     struct TemplateOptions *templ_opts; /* e.g. --tcpmss */

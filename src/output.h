@@ -128,6 +128,10 @@ struct Output
     struct {
         char *stylesheet;
     } xml;
+
+    /** Lazily-opened handle for --sni-match-file; NULL until the first SNI
+     * match is written. */
+    FILE *sni_match_fp;
 };
 
 const char *name_from_ip_proto(unsigned ip_proto);

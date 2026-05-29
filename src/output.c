@@ -47,8 +47,45 @@
 #include <ctype.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <io.h>
+#ifndef isatty
+#define isatty _isatty
+#endif
+#ifndef fileno
+#define fileno _fileno
+#endif
+#else
+#include <unistd.h>
+#endif
+
 /* Put this at the bottom of the include lists because of warnings */
 #include "util-safefunc.h"
+
+/***************************************************************************
+ * Case-insensitive substring search. We can't rely on strcasestr() since
+ * it isn't portable. Used to test whether an SSL banner (cert names) carries
+ * the hostname requested via --ssl-sni.
+ ***************************************************************************/
+static int
+banner_contains_nocase(const char *haystack, const char *needle)
+{
+    size_t nlen = strlen(needle);
+    size_t i;
+
+    if (nlen == 0)
+        return 0;
+
+    for (; *haystack; haystack++) {
+        for (i = 0; i < nlen; i++) {
+            if (tolower((unsigned char)haystack[i]) != tolower((unsigned char)needle[i]))
+                break;
+        }
+        if (i == nlen)
+            return 1;
+    }
+    return 0;
+}
 
 
 /*****************************************************************************
@@ -922,6 +959,43 @@ output_report_banner(struct Output *out, time_t now,
         fprintf(stdout, "\n");
     }
 
+    /*
+     * SNI match: if scanning with --ssl-sni, flag SSL banners whose cert names
+     * carry the requested hostname. This is the positive signal for an
+     * origin-exposure audit (the raw IP serves a cert for your domain).
+     * Highlight it on the console and, if --sni-match-file was given, append
+     * an "ip:port cert-summary" line to that file.
+     */
+    if (out->masscan->ssl_sni != NULL && proto == PROTO_SSL3) {
+        char match_buffer[MAX_BANNER_LENGTH];
+        const char *summary = normalize_string(px, length, match_buffer,
+                                                sizeof(match_buffer));
+
+        if (banner_contains_nocase(summary, out->masscan->ssl_sni)) {
+            int tty = isatty(fileno(stdout));
+
+            fprintf(stdout, "%s>>> SNI MATCH %s:%u serves \"%s\" -> %s%s\n",
+                    tty ? "\x1b[1;32m" : "",
+                    fmt.string, port, out->masscan->ssl_sni, summary,
+                    tty ? "\x1b[0m" : "");
+
+            if (out->masscan->sni_match_filename != NULL) {
+                if (out->sni_match_fp == NULL) {
+                    out->sni_match_fp = fopen(out->masscan->sni_match_filename,
+                                              out->is_append ? "a" : "w");
+                    if (out->sni_match_fp == NULL)
+                        LOG(0, "FAIL: %s: could not open SNI match file\n",
+                            out->masscan->sni_match_filename);
+                }
+                if (out->sni_match_fp != NULL) {
+                    fprintf(out->sni_match_fp, "%s:%u %s\n",
+                            fmt.string, port, summary);
+                    fflush(out->sni_match_fp);
+                }
+            }
+        }
+    }
+
     /* If not outputting to a file, then don't do anything */
     if (fp == NULL)
         return;
@@ -979,6 +1053,9 @@ output_destroy(struct Output *out)
         close_rotate(out, out->fp);
 
 
+
+    if (out->sni_match_fp)
+        fclose(out->sni_match_fp);
 
     free(out->xml.stylesheet);
     free(out->rotate.directory);

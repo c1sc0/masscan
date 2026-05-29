@@ -80,3 +80,23 @@ If a host returns *your* certificate, the origin is reachable outside
 Cloudflare — lock inbound 443 to Cloudflare's IP ranges.
 
 Aliases: `--sni`, `--tls-sni`.
+
+### Flagging matches (`--sni-match-file`)
+
+When `--ssl-sni` is set, any SSL banner whose cert names contain the requested
+hostname is **highlighted** on the console (`>>> SNI MATCH ...`). Add
+`--sni-match-file <path>` to also collect matches to a file, one
+`ip:port cert-summary` line per host — ready to feed a firewall script.
+
+```sh
+docker run --rm --cap-add=NET_RAW --cap-add=NET_ADMIN --network host \
+    -v "$PWD/output:/output" \
+    masscan:local -p443 --ssl-sni torrentek.org \
+    --sni-match-file /output/exposed-origins.txt \
+    87.236.16.0/24
+```
+
+A host serving some *other* default cert (SNI didn't match a vhost) is not
+flagged — only a cert carrying your domain counts as a hit.
+
+Aliases: `--sni-match`, `--match-file`.

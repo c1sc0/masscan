@@ -1230,6 +1230,23 @@ static int SET_ssl_sni(struct Masscan *masscan, const char *name, const char *va
     return CONF_OK;
 }
 
+static int SET_sni_match_file(struct Masscan *masscan, const char *name, const char *value)
+{
+    UNUSEDPARM(name);
+    if (masscan->echo) {
+        if (masscan->sni_match_filename || masscan->echo_all)
+            fprintf(masscan->echo, "sni-match-file = %s\n",
+                    masscan->sni_match_filename ? masscan->sni_match_filename : "");
+        return 0;
+    }
+
+    if (masscan->sni_match_filename)
+        free(masscan->sni_match_filename);
+    masscan->sni_match_filename = MALLOC(strlen(value) + 1);
+    memcpy(masscan->sni_match_filename, value, strlen(value) + 1);
+    return CONF_OK;
+}
+
 static int SET_hello_file(struct Masscan *masscan, const char *name, const char *value)
 {
     unsigned index;
@@ -2412,6 +2429,7 @@ struct ConfigParameter config_parameters[] = {
     {"pcap-payloads",   SET_pcap_payloads,      0,      {"pcap-payload",0}},
     {"hello",           SET_hello,              0,      {0}},
     {"ssl-sni",         SET_ssl_sni,            0,      {"sni", "tls-sni", 0}},
+    {"sni-match-file",  SET_sni_match_file,     0,      {"sni-match", "match-file", 0}},
     {"hello-file",      SET_hello_file,         0,      {"hello-filename",0}},
     {"hello-string",    SET_hello_string,       0,      {0}},
     {"hello-timeout",   SET_hello_timeout,      0,      {0}},
